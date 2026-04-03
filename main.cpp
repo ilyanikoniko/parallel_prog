@@ -4,21 +4,19 @@
 #include <chrono>
 #include <random>
 #include <string>
+#include <numeric> // Для использования accumulate, если нужно
+#include <omp.h>
 
 using namespace std;
 
-void writeFullMatrix(ofstream& f, int n, const string& label, const vector<double>& mat) {
-    f << "START_" << label << " SIZE: " << n << endl;
-    for (int i = 0; i < n; i++) {
-        for (int j = 0; j < n; j++) {
-            f << mat[i * n + j] << " ";
-        }
-        f << endl;
-    }
-    f << "END_" << label << endl;
-}
+// Функция умножения с распараллеливанием
+void multiply(int n, const vector<double>& A, const vector<double>& B, vector<double>& C, int num_threads) {
+    omp_set_num_threads(num_threads); 
+    
+    // Обнуляем результирующую матрицу перед расчетом
+    fill(C.begin(), C.end(), 0.0);
 
-void multiply(int n, const vector<double>& A, const vector<double>& B, vector<double>& C) {
+    #pragma omp parallel for
     for (int i = 0; i < n; i++) {
         for (int k = 0; k < n; k++) {
             double temp = A[i * n + k];
@@ -30,46 +28,60 @@ void multiply(int n, const vector<double>& A, const vector<double>& B, vector<do
 }
 
 int main() {
+    // Параметры эксперимента
     vector<int> sizes = {200, 400, 800, 1200, 1600, 2000};
+    vector<int> threads_opts = {1, 2, 4, 8, 12}; 
+    const int NUM_EXPERIMENTS = 5; // Количество запусков для усреднения
     
-    ofstream inFile("input.txt");
-    ofstream resFile("result.txt");
-    ofstream dataFile("data.txt");
+    ofstream dataFile("data_openmp.txt");
+    if (!dataFile.is_open()) {
+        cerr << "Error opening file!" << endl;
+        return 1;
+    }
 
     random_device rd;
     mt19937 gen(rd());
     uniform_real_distribution<> dis(1.0, 10.0);
 
     for (int n : sizes) {
-        for (int exp = 1; exp <= 3; exp++) {
-            cout << "Running: N=" << n << ", Exp=" << exp << "..." << endl;
+        // Выделяем память под матрицы
+        vector<double> A(n * n), B(n * n), C(n * n);
+        
+        // Генерируем случайные данные
+        for (int i = 0; i < n * n; i++) {
+            A[i] = dis(gen);
+            B[i] = dis(gen);
+        }
+
+        for (int t : threads_opts) {
+            cout << "Testing: N=" << n << ", Threads=" << t << " (" << NUM_EXPERIMENTS << " runs)..." << endl;
             
-            vector<double> A(n * n), B(n * n), C(n * n, 0.0);
-            for (int i = 0; i < n * n; i++) {
-                A[i] = dis(gen);
-                B[i] = dis(gen);
+            double total_time = 0.0;
+
+            // Проводим серию экспериментов
+            for (int exp = 0; exp < NUM_EXPERIMENTS; exp++) {
+                auto start = chrono::high_resolution_clock::now();
+                multiply(n, A, B, C, t); 
+                auto end = chrono::high_resolution_clock::now();
+
+                total_time += chrono::duration<double>(end - start).count();
             }
 
-            inFile << "### EXPERIMENT_START N=" << n << " EXP=" << exp << " ###" << endl;
-            writeFullMatrix(inFile, n, "A", A);
-            writeFullMatrix(inFile, n, "B", B);
-            inFile << "### EXPERIMENT_END ###" << endl;
-
-            auto start = chrono::high_resolution_clock::now();
-            multiply(n, A, B, C); 
-            auto end = chrono::high_resolution_clock::now();
-
-            double time_spent = chrono::duration<double>(end - start).count();
-            long long ops = 2LL * n * n * n; //
-
-            resFile << "### RESULT_START N=" << n << " EXP=" << exp << " ###" << endl;
-            resFile << "Time: " << time_spent << "s, Operations: " << ops << endl;
-            writeFullMatrix(resFile, n, "C", C);
-            resFile << "### RESULT_END ###" << endl;
-
-            dataFile << n << " " << time_spent << " " << ops << endl;
+            // Вычисляем среднее арифметическое
+            double avg_time = total_time / NUM_EXPERIMENTS;
+            
+            // Записываем в файл: Размер | Потоки | Среднее время
+            dataFile << n << " " << t << " " << avg_time << endl;
         }
+        
+        // Явно освобождаем память больших векторов перед следующим размером N
+        A.clear(); A.shrink_to_fit();
+        B.clear(); B.shrink_to_fit();
+        C.clear(); C.shrink_to_fit();
     }
-    cout << "DONE! Files created: input.txt, result.txt, data.txt" << endl;
+
+    dataFile.close(); // Закрываем файл корректно
+    cout << "DONE! Results (averaged) saved to data_openmp.txt" << endl;
+    
     return 0;
 }

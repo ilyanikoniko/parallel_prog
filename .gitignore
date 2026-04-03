@@ -1,5 +1,7 @@
-input.txt
-result.txt
-data.txt
 *.exe
-matrix_app
+*.obj
+*.pdb
+*.ilk
+*.dll
+.idea/
+.vscode/

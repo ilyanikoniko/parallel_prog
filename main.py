@@ -1,74 +1,42 @@
 import numpy as np
+import matplotlib.pyplot as plt
 import os
 
 
-def parse_matrix_from_lines(lines, label):
-    """Ищет в блоке текста матрицу между метками START_label и END_label"""
-    start_label = f"START_{label}"
-    end_label = f"END_{label}"
-
-    start_idx = -1
-    size = 0
-    for i, line in enumerate(lines):
-        if line.startswith(start_label):
-            size = int(line.split(":")[1])
-            start_idx = i + 1
-            break
-
-    if start_idx == -1:
-        return None
-
-    matrix_data = []
-    # Читаем ровно столько строк, сколько составляет размер N
-    for i in range(start_idx, start_idx + size):
-        matrix_data.append([float(x) for x in lines[i].split()])
-
-    return np.array(matrix_data)
-
-
-def verify():
-    if not os.path.exists("input.txt"):
-        print("Error: input.txt not found. Run C++ first!")
+def analyze():
+    if not os.path.exists("data_openmp.txt"):
+        print("Error: data_openmp.txt not found!")
         return
 
-    print("=" * 60)
-    print("ВЕРИФИКАЦИЯ СЛУЧАЙНЫХ МАТРИЦ (NumPy)")
-    print("=" * 60)
+    # Загружаем данные: [Размер, Потоки, Время]
+    data = np.loadtxt("data_openmp.txt")
+    sizes = np.unique(data[:, 0])
+    threads = np.unique(data[:, 1])
 
-    # Читаем весь файл и делим его на эксперименты
-    with open("input.txt", "r") as f:
-        experiments = f.read().split("EXPERIMENT_START")[1:]
+    plt.figure(figsize=(10, 6))
 
-    for block in experiments:
-        lines = block.strip().split("\n")
-        header = lines[0]
-        n = int(header.split("N=")[1].split()[0])
-        exp = int(header.split("EXP=")[1].split()[0])
+    for n in sizes:
+        # Фильтруем данные для конкретного размера матрицы
+        subset = data[data[:, 0] == n]
+        subset = subset[subset[:, 1].argsort()]  # Сортируем по потокам
 
-        # Парсим матрицы A и B
-        A = parse_matrix_from_lines(lines, "A")
-        B = parse_matrix_from_lines(lines, "B")
+        t1 = subset[subset[:, 1] == 1][0, 2]  # Время на 1 потоке
+        speedup = t1 / subset[:, 2]  # Ускорение S = T1 / Tn
 
-        if A is not None and B is not None:
-            expected_first = np.dot(A[0, :], B[:, 0])
-            print(f"Размер {n:4} (Exp {exp}): Верификация случайных данных ОК ")
+        plt.plot(subset[:, 1], speedup, marker='o', label=f'Size {int(n)}x{int(n)}')
 
-    print("=" * 60)
-    print("МАСШТАБИРУЕМОСТЬ O(n³):")
-    if os.path.exists("data.txt"):
-        data = np.loadtxt("data.txt")
-        unique_sizes = np.unique(data[:, 0])
-        avg_times = []
-        for s in unique_sizes:
-            avg_times.append((s, np.mean(data[data[:, 0] == s][:, 1])))
+    # Линия идеального ускорения (S = n)
+    plt.plot(threads, threads, 'k--', label='Ideal Speedup', alpha=0.5)
 
-        for i in range(len(avg_times) - 1):
-            n1, t1 = avg_times[i]
-            n2, t2 = avg_times[i + 1]
-            growth = t2 / t1
-            expected = (n2 / n1) ** 3
-            print(f"Размер {n1}->{n2}: Время выросло в {growth:.2f}x (Ожидалось {expected:.2f}x)")
+    plt.title('OpenMP Speedup Analysis')
+    plt.xlabel('Number of Threads')
+    plt.ylabel('Speedup (T1 / Tn)')
+    plt.legend()
+    plt.grid(True, ls='--')
+    plt.savefig('speedup_results.png')
+    print("Analysis complete. Chart saved as speedup_results.png")
+    plt.show()
 
 
 if __name__ == "__main__":
-    verify()
+    analyze()
