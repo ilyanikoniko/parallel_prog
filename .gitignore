@@ -3,3 +3,10 @@ result.txt
 data.txt
 *.exe
 matrix_app
+*.exe
+*.obj
+*.pdb
+*.ilk
+*.dll
+.idea/
+.vscode/
